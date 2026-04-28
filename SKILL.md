@@ -1,11 +1,11 @@
 ---
 name: unsplash-fetch
-description: Use this skill when the user wants images for web/UI work — hero images, backgrounds, thumbnails, mockup photos, placeholder photography, or any "image of X" / "photo of X" / "fetch a picture of X" request, especially when they mention a save location or web project context. Also triggers on follow-ups like "different one" / "another one" / "swap it" against a previously fetched keyword, and on cache management like "clear the cache for X". Fetches via Unsplash API with 30-day per-keyword caching to minimize API calls. Make sure to use this skill whenever the user is doing web production and asks for any kind of photo or image, even if they don't explicitly say "Unsplash."
+description: Use this skill when the user wants images for web/UI work — hero images, backgrounds, thumbnails, mockup photos, placeholder photography, or any "image of X" / "photo of X" / "fetch a picture of X" request, especially when they mention a save location or web project context. Also triggers on follow-ups like "different one" / "another one" / "swap it" against a previously fetched keyword, and on cache management like "clear the cache for X". Fetches via Unsplash API with per-keyword caching (cleared explicitly via --clear) to minimize API calls. Make sure to use this skill whenever the user is doing web production and asks for any kind of photo or image, even if they don't explicitly say "Unsplash."
 ---
 
 # unsplash-fetch
 
-Fetch images from the Unsplash API by keyword and save them locally. Search results for the same keyword are cached at the project root (30-day TTL); subsequent calls pull the next image from the cache by index.
+Fetch images from the Unsplash API by keyword and save them locally. Search results for the same keyword are cached at the project root and persist until explicitly cleared; subsequent calls pull the next image from the cache by index.
 
 ## When to trigger
 
@@ -33,7 +33,7 @@ Pull what you can from conversation context. Only ask about the things you genui
 
 | Argument | How to decide | Default |
 |---|---|---|
-| `--keyword` | Required. Extract from user utterance. Unsplash hits better with English, so translate "夕焼け" → `sunset`, "桜" → `cherry blossom`, etc. (unless the user explicitly wants to search in another language) | (must be resolved) |
+| `--keyword` | Required. Extract from user utterance. Unsplash hits better with English, so translate "夕焼け" → `sunset`, "桜" → `cherry blossom`, etc. (unless the user explicitly wants to search in another language). **Keep it short — ideally 1 word, at most a 3-word compound** (`sunset`, `cherry blossom`, `misty mountain forest`). Long descriptive phrases ("a dramatic sunset over the ocean with clouds") collapse Unsplash's relevance ranking and return junk. Strip adjectives and scene description from the user's utterance and reduce to the core noun(s); use subjective criteria (`dramatic`, `warm`) for **index selection via the contact-sheet**, not as keyword tokens | (must be resolved) |
 | `--index` | 0–29. Unsplash sorts by relevance, so default 0 is the top candidate. When the user says "another one", pick a different index (see below) | 0 |
 | `--output` | Use the path the user gave. If natural project paths exist (`./public/images/`, `./src/assets/`, `./static/images/`), suggest one. Only ask when truly unclear | `./images/` |
 | `--name` | If the purpose is clear ("hero image" → `hero`), suggest a name. Use what the user states explicitly; otherwise let auto-naming handle it (`{keyword}-{index}`) | auto |
@@ -78,17 +78,17 @@ The script writes JSON to stdout. Tell the user:
 
 - The save path
 - Photographer credit (Unsplash guidelines recommend attribution): `Photo by {photographer} on Unsplash` with the photo_url linked
-- Which index was used and cache status (how many days since fetch)
+- Which index was used and cache status (`hit` = reused, `miss` = freshly fetched)
 
 Example:
 > ✓ Saved to `./public/images/hero.webp` (index 1 / 30)
 > Photo by Jane Doe on Unsplash — https://unsplash.com/photos/abc123
-> Cache: 12 days old
+> Cache: hit
 
 ## Cache management
 
 - Location: `./.unsplash-cache/{keyword-slug}.json` in the current directory
-- TTL: 30 days. After expiry, the next fetch re-fetches automatically
+- Caches persist until explicitly cleared (no automatic expiry). If the user wants fresh candidates for a keyword, suggest `--clear` for that keyword
 - Clear a specific keyword:
   ```bash
   python <skill_dir>/scripts/fetch_unsplash.py --clear --keyword "sunset"
@@ -141,7 +141,7 @@ If no cache exists for that keyword, tell the user "we need to fetch once first 
 ## Design rationale
 
 - **Per-project cache**: web projects naturally use different image sets, so per-project caches make moving and cleaning up trivial
-- **30-day TTL**: Unsplash adds new photos daily. Reusing the same keyword for too long biases the candidates, so a monthly refresh is the sweet spot
+- **No automatic expiry**: caches persist until the user runs `--clear`. Predictable behavior beats lazy refresh — when the user wants fresh candidates (e.g. "the sunset cache feels stale"), they clear explicitly. Unsplash does add photos daily, so for long-running projects suggest an occasional clear
 - **Index-based selection**: explicit indices instead of random selection. Defaults to `0` to respect Unsplash's relevance ordering, and Claude advances the index for "another one". Reproducible, and the user can also say "the 3rd one" directly
 - **Slim cache**: only the 9 fields actually used (`id` / `raw_url` / `regular_url` / `small_url` / `download_location` / `alt` / `photographer` / `photographer_url` / `photo_url`). The bulk of the API response is dropped. No `used_ids`-style state either
 - **Prefer Unsplash's prebuilt URLs**: gallery thumbnails use `urls.small`, default 1080px JPG downloads use `urls.regular`, both untouched. Unsplash uses an imgix CDN, and these URLs are shared across all API consumers, so edge-cache hits are likely. Custom params (`?w=400&q=70`, etc.) create separate cache entries and slow down the first hit

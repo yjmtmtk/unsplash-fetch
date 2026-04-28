@@ -3,6 +3,7 @@
 
 Cache lives in ./.unsplash-cache/ relative to the current working directory.
 Each cache entry stores only the fields actually used downstream.
+Caches persist until cleared explicitly via --clear.
 """
 
 import argparse
@@ -17,11 +18,10 @@ import sys
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 CACHE_DIR_NAME = ".unsplash-cache"
-CACHE_TTL_DAYS = 30
 PER_PAGE = 30
 DEFAULT_WIDTH = 1080
 API_BASE = "https://api.unsplash.com"
@@ -52,16 +52,6 @@ def save_cache(data: dict) -> None:
     p = cache_path(data["keyword"])
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def is_fresh(cache: dict) -> bool:
-    fetched_at = datetime.fromisoformat(cache["fetched_at"].replace("Z", "+00:00"))
-    return datetime.now(timezone.utc) - fetched_at < timedelta(days=CACHE_TTL_DAYS)
-
-
-def cache_age_days(cache: dict) -> float:
-    fetched_at = datetime.fromisoformat(cache["fetched_at"].replace("Z", "+00:00"))
-    return (datetime.now(timezone.utc) - fetched_at).total_seconds() / 86400
 
 
 def http_get_json(url: str, headers: dict) -> dict:
@@ -488,11 +478,6 @@ def cmd_fetch(args) -> None:
         save_cache(cache)
         cache_status = "miss"
         refreshed = True
-    elif not is_fresh(cache):
-        cache = fetch_from_api(keyword, access_key)
-        save_cache(cache)
-        cache_status = "expired"
-        refreshed = True
 
     map_file = map_path(keyword)
     if refreshed or not map_file.exists():
@@ -527,7 +512,7 @@ def cmd_fetch(args) -> None:
         "photo_url": photo["photo_url"],
         "alt": photo["alt"],
         "cache_status": cache_status,
-        "cache_age_days": round(cache_age_days(cache), 1),
+        "fetched_at": cache["fetched_at"],
         "total_in_cache": len(cache["photos"]),
         "map_image": str(map_file) if map_file.exists() else None,
         "width": width,
@@ -538,7 +523,7 @@ def cmd_fetch(args) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Fetch Unsplash images by keyword with per-keyword 30-day caching."
+        description="Fetch Unsplash images by keyword with per-keyword caching (cleared via --clear)."
     )
     p.add_argument("--keyword", help="Search keyword (English recommended)")
     p.add_argument(

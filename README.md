@@ -1,6 +1,6 @@
 # unsplash-fetch
 
-A Claude Code skill that fetches images from the Unsplash API by keyword and saves them locally, with a 30-day per-keyword cache to minimize API calls.
+A Claude Code skill that fetches images from the Unsplash API by keyword and saves them locally, with a per-keyword cache to minimize API calls.
 
 Designed for web/UI work — hero images, backgrounds, thumbnails, mockup photos, placeholder photography. Just ask Claude for an image and it'll handle the rest.
 
@@ -38,7 +38,7 @@ Just ask Claude in natural language:
 - First fetch for a keyword pulls 30 results from Unsplash and caches them at `./.unsplash-cache/{keyword}.json`
 - A contact-sheet image (`{keyword}-map.jpg`, 6×5 grid with index badges) is generated alongside, so Claude can visually pick the right one when you specify subjective criteria
 - Subsequent calls reuse the cache (no API hit) and pull a different index
-- Cache TTL is 30 days; expired caches refetch automatically
+- Caches persist until you explicitly clear them (`"clear the sunset cache"`) — no automatic expiry
 - Photographer credit is reported with each image (per Unsplash API guidelines)
 
 ## Cache structure
