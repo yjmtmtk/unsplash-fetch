@@ -1,0 +1,4 @@
+.unsplash-cache/
+__pycache__/
+*.pyc
+.DS_Store
