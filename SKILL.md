@@ -12,7 +12,6 @@ Fetch images from the Unsplash API by keyword and save them locally. Search resu
 - "I want a picture of a cat", "Get me a sunset photo"
 - "Save a sunset image perfect for a hero into `./public/images/`"
 - "Give me a different one", "Another one" (continues the previous keyword)
-- "Show me what's cached for sunset in the browser", "Let me see the candidates"
 - "Clear the sunset cache", "Wipe all caches"
 
 ## Prerequisite: API key
@@ -24,6 +23,19 @@ Run the script normally. Only if it returns `ERROR: UNSPLASH_ACCESS_KEY not set`
 > An Unsplash access key is required. Would you rather set it permanently with `export UNSPLASH_ACCESS_KEY=...`, or pass it just for this session?
 
 If they pass it once, hand it through with `--access-key`.
+
+## One-time permission setup (offer after the first fetch in a conversation)
+
+Each invocation of `python <skill_dir>/scripts/fetch_unsplash.py` triggers a Claude Code permission prompt unless the user has allowlisted the pattern. **Don't pre-check before running** — it adds delay before the user gets their image. Instead:
+
+1. Run the user's request normally first
+2. After the first **successful** fetch in a conversation, Read `~/.claude/settings.json`
+3. If `permissions.allow` does **not** contain a pattern matching `Bash(python *fetch_unsplash.py *)`, offer once:
+   > 次回以降の確認をスキップしたければ、`~/.claude/settings.json` の `permissions.allow` に `"Bash(python *fetch_unsplash.py *)"` を足しておきましょうか？（反映に Claude Code の再起動が要る場合があります）
+4. If the user agrees, use the `update-config` skill (or Edit the file directly) to add the entry. If they decline, don't ask again in the same conversation
+5. If the pattern is already present, skip the offer entirely — don't even mention it
+
+Only do this once per conversation, and only after a successful fetch (don't bother the user before they've seen the skill work).
 
 ## Workflow
 
@@ -38,7 +50,7 @@ Pull what you can from conversation context. Only ask about the things you genui
 | `--output` | Use the path the user gave. If natural project paths exist (`./public/images/`, `./src/assets/`, `./static/images/`), suggest one. Only ask when truly unclear | `./images/` |
 | `--name` | If the purpose is clear ("hero image" → `hero`), suggest a name. Use what the user states explicitly; otherwise let auto-naming handle it (`{keyword}-{index}`) | auto |
 | `--width` | Use what the user specifies ("at 1920"). Otherwise the regular size equivalent (1080) | 1080 |
-| `--format` | webp if requested, otherwise jpg | jpg |
+| `--format` | webp / png if requested, otherwise jpg | jpg |
 
 When everything is provided ("Save a hero image to `./public/images/` at 1920 in webp"), run without asking anything.
 
@@ -104,39 +116,54 @@ A new fetch automatically generates a **contact-sheet image** — 30 thumbnails 
 
 ### Purpose: let the AI pick the index
 
-When the user states a **subjective selection criterion** like "the most sunset-y one", "the warmest-feeling one", or "the one without people", Claude opens this map image with the Read tool, judges visually, and returns the best index.
+When the user states a **subjective selection criterion**, Claude opens this map image with the Read tool, judges visually, and returns the best index.
 
-### Flow
+### When to use the map (subjective vs objective)
+
+The default flow uses `index 0` (Unsplash's top relevance result). **Only switch to the map flow when the user gives a criterion that requires looking at the photos to evaluate.**
+
+| User says... | Subjective? | Action |
+|---|---|---|
+| "Get a sunset image" | No (no criterion at all) | Skip map → `index 0` |
+| "Hero image of a sunset" | No (purpose, not visual criterion) | Skip map → `index 0` |
+| "A nice/good/cool sunset" | No (vague filler) | Skip map → `index 0` |
+| "The 5th sunset" | No (explicit index) | Skip map → `index 5` |
+| "Another one" / "different vibe" | No (advance index) | Skip map, advance index |
+| "The most dramatic sunset" | **Yes** | Use map flow |
+| "The warmest-feeling sunset" | **Yes** | Use map flow |
+| "A sunset without people" | **Yes** (content filter) | Use map flow |
+| "The most minimal one" | **Yes** | Use map flow |
+| "One that fits a calm aesthetic" | **Yes** | Use map flow |
+
+Rule of thumb: if the user uses a superlative ("most X", "the Xest"), or a filter that requires examining the image content (presence/absence of objects, mood, composition), use the map. Otherwise skip it.
+
+### Flow (subjective criterion, no cache yet)
+
+For the first fetch with a subjective criterion, **don't waste a download on `index 0`**. Use `--map-only` to populate the cache and emit the map image without downloading anything, then pick the index, then run the real fetch.
 
 1. User: "The most dramatic sunset, save to `./public/images/hero.jpg`"
-2. Claude: fetch first if needed (cache miss auto-generates the map). If already generated, just open the map
+2. Claude: prepare the contact sheet without downloading
+   ```bash
+   python <skill_dir>/scripts/fetch_unsplash.py --map-only --keyword "sunset"
+   ```
+3. Claude: open the map with the Read tool
    ```
    Read: .unsplash-cache/sunset-map.jpg
    ```
-3. Claude: compare the 30 thumbnails and decide "index 17 is the most dramatic"
-4. Claude: download with `--index 17`
+4. Claude: compare the 30 thumbnails and decide "index 17 is the most dramatic"
+5. Claude: download with `--index 17`
+   ```bash
+   python <skill_dir>/scripts/fetch_unsplash.py --keyword "sunset" --index 17 --output ./public/images/ --name hero
+   ```
+
+### Flow (subjective criterion, cache already exists)
+
+If `.unsplash-cache/{keyword}.json` and `-map.jpg` already exist (e.g. the user previously ran a fetch on this keyword), skip `--map-only` — just Read the map directly and download the chosen index.
 
 ### Notes
 
 - The map path is fixed at `.unsplash-cache/{keyword-slug}-map.jpg`. The fetch result JSON includes it as the `map_image` field
-- For older caches without a map image, `--browse` regenerates it automatically
-- When the user says "index 0 is fine" or "just auto", you don't need to open the map. **Use the map only when the criterion is subjective.**
-
-## Browse the cache in a browser
-
-Triggered by requests like "show me what's available for sunset" or "what candidates do we have?".
-
-```bash
-python <skill_dir>/scripts/fetch_unsplash.py --browse --keyword "sunset"
-```
-
-Behavior:
-- Generates `.unsplash-cache/sunset.html` (30 thumbnails in a grid, each card showing index, alt text, and photographer credit)
-- On macOS, opens automatically in the default browser
-- Clicking a card copies `--index N` to the clipboard
-- If the user says "the 7th one", fetch with `--index 7`
-
-If no cache exists for that keyword, tell the user "we need to fetch once first to populate the cache" and start with the initial fetch (confirm `--index 0` is OK).
+- When the user says "index 0 is fine" or "just auto", skip the map entirely and run the regular fetch. **Use the map only when the criterion is subjective.**
 
 ## Design rationale
 

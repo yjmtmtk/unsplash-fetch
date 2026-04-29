@@ -22,6 +22,20 @@ export UNSPLASH_ACCESS_KEY=your_key_here
 
 Add it to your shell profile (`~/.zshrc`, `~/.bashrc`) for permanence.
 
+### Skip Claude Code permission prompts (optional, one-time)
+
+By default Claude Code asks for permission every time it runs the fetch script. To skip, add this to `~/.claude/settings.json`:
+
+```json
+{
+  "permissions": {
+    "allow": ["Bash(python *fetch_unsplash.py *)"]
+  }
+}
+```
+
+If you don't set this up yourself, Claude will offer to add it for you after the first successful fetch in a conversation.
+
 ## Usage
 
 Just ask Claude in natural language:
@@ -29,8 +43,7 @@ Just ask Claude in natural language:
 - "I want a sunset image for the hero, save it to `./public/images/`"
 - "Get me a photo of a cat at 1920px in webp"
 - "Another one" / "different one" — pulls the next index from the cache
-- "Show me what's cached for sunset" — opens an HTML grid in the browser
-- "The most dramatic one" — Claude looks at the contact-sheet image and picks for you
+- "The most dramatic one" — Claude prepares the contact-sheet first (no wasted download), looks at it, and picks the right index for you
 - "Clear the sunset cache"
 
 ## How it works
