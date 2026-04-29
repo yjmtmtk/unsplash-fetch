@@ -18,9 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 CACHE_DIR_NAME = ".unsplash-cache"
+RATE_LIMIT_FILE = ".rate-limit.json"
 PER_PAGE = 30
 DEFAULT_WIDTH = 1080
 API_BASE = "https://api.unsplash.com"
+
+_LATEST_RATE_LIMIT = None
 
 
 def slugify(s: str) -> str:
@@ -51,9 +54,45 @@ def save_cache(data: dict) -> None:
 
 
 def http_get_json(url: str, headers: dict) -> dict:
+    global _LATEST_RATE_LIMIT
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as resp:
+        remaining = resp.headers.get("X-Ratelimit-Remaining")
+        limit = resp.headers.get("X-Ratelimit-Limit")
+        if remaining is not None and limit is not None:
+            try:
+                _LATEST_RATE_LIMIT = {
+                    "remaining": int(remaining),
+                    "limit": int(limit),
+                }
+            except ValueError:
+                pass
         return json.loads(resp.read())
+
+
+def rate_limit_path() -> Path:
+    return Path.cwd() / CACHE_DIR_NAME / RATE_LIMIT_FILE
+
+
+def persist_rate_limit() -> None:
+    if _LATEST_RATE_LIMIT is None:
+        return
+    p = rate_limit_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(_LATEST_RATE_LIMIT), encoding="utf-8")
+
+
+def current_rate_limit():
+    """Latest from this run, falling back to the persisted last-known value."""
+    if _LATEST_RATE_LIMIT is not None:
+        return _LATEST_RATE_LIMIT
+    p = rate_limit_path()
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return None
 
 
 def fetch_from_api(keyword: str, access_key: str) -> dict:
@@ -249,7 +288,7 @@ def cmd_clear(args) -> None:
     if args.all:
         if cache_dir.exists():
             count = 0
-            for pattern in ("*.json", "*-map.jpg"):
+            for pattern in ("*.json", "*-map.jpg", ".rate-limit.json"):
                 for f in cache_dir.glob(pattern):
                     f.unlink()
                     count += 1
@@ -302,6 +341,7 @@ def cmd_map_only(args) -> None:
     """Populate the cache and emit the contact-sheet image, without downloading."""
     access_key = resolve_access_key(args)
     cache, cache_status, map_file = ensure_cache_and_map(args.keyword, access_key)
+    persist_rate_limit()
     print(
         json.dumps(
             {
@@ -309,6 +349,7 @@ def cmd_map_only(args) -> None:
                 "keyword": args.keyword,
                 "total_in_cache": len(cache["photos"]),
                 "cache_status": cache_status,
+                "rate_limit": current_rate_limit(),
             },
             ensure_ascii=False,
             indent=2,
@@ -337,6 +378,7 @@ def cmd_fetch(args) -> None:
     dest = output_dir / filename
 
     download(download_url, dest)
+    persist_rate_limit()
 
     result = {
         "saved_to": str(dest),
@@ -352,6 +394,7 @@ def cmd_fetch(args) -> None:
         "map_image": str(map_file) if map_file.exists() else None,
         "width": width,
         "format": fmt,
+        "rate_limit": current_rate_limit(),
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

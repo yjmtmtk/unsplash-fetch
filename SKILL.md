@@ -29,11 +29,16 @@ If they pass it once, hand it through with `--access-key`.
 Each invocation of `python <skill_dir>/scripts/fetch_unsplash.py` triggers a Claude Code permission prompt unless the user has allowlisted the pattern. **Don't pre-check before running** — it adds delay before the user gets their image. Instead:
 
 1. Run the user's request normally first
-2. After the first **successful** fetch in a conversation, Read `~/.claude/settings.json`
-3. If `permissions.allow` does **not** contain a pattern matching `Bash(python *fetch_unsplash.py *)`, offer once:
-   > 次回以降の確認をスキップしたければ、`~/.claude/settings.json` の `permissions.allow` に `"Bash(python *fetch_unsplash.py *)"` を足しておきましょうか？（反映に Claude Code の再起動が要る場合があります）
-4. If the user agrees, use the `update-config` skill (or Edit the file directly) to add the entry. If they decline, don't ask again in the same conversation
-5. If the pattern is already present, skip the offer entirely — don't even mention it
+2. After the first **successful** fetch in a conversation, Read `~/.claude/settings.json` (and `~/.claude/settings.local.json` if it exists)
+3. **Judge whether any existing entry in `permissions.allow` already covers the invocation.** Match flexibly — don't require an exact string. The script will be invoked as something like `python /Users/.../skills/unsplash-fetch/scripts/fetch_unsplash.py --keyword ...`. Treat any of these as already covered (offer nothing):
+   - `Bash(python *fetch_unsplash.py*)` (wildcard path)
+   - `Bash(python <absolute-skill-dir>/scripts/fetch_unsplash.py:*)` (exact path with arg wildcard via `:*`)
+   - `Bash(python *fetch_unsplash.py *)` (space-arg form)
+   - Any broader pattern that would match (e.g. `Bash(python *)`, `Bash(*fetch_unsplash*)`)
+   - In short: if the pattern would let `python <some-path>/fetch_unsplash.py <args>` run without prompting, it's covered
+4. **Only if nothing matches**, offer once:
+   > 次回以降の確認をスキップしたければ、`~/.claude/settings.json` の `permissions.allow` に `"Bash(python *fetch_unsplash.py*)"` を足しておきましょうか？（反映に Claude Code の再起動が要る場合があります）
+5. If the user agrees, use the `update-config` skill (or Edit the file directly) to add the entry. If they decline, don't ask again in the same conversation
 
 Only do this once per conversation, and only after a successful fetch (don't bother the user before they've seen the skill work).
 
@@ -91,11 +96,12 @@ The script writes JSON to stdout. Tell the user:
 - The save path
 - Photographer credit (Unsplash guidelines recommend attribution): `Photo by {photographer} on Unsplash` with the photo_url linked
 - Which index was used and cache status (`hit` = reused, `miss` = freshly fetched)
+- Remaining API quota, from the `rate_limit` field: `API: {remaining}/{limit}/h` (Unsplash uses a rolling 1-hour window)
 
 Example:
 > ✓ Saved to `./public/images/hero.webp` (index 1 / 30)
 > Photo by Jane Doe on Unsplash — https://unsplash.com/photos/abc123
-> Cache: hit
+> Cache: hit · API: 47/50/h
 
 ## Cache management
 
