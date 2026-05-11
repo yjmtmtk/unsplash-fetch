@@ -131,7 +131,7 @@ def fetch_from_api(keyword: str, access_key: str) -> dict:
 
 
 def trigger_download_ping(download_location: str, access_key: str) -> None:
-    """Required by Unsplash API guidelines — call this when serving the photo."""
+    """Required by Unsplash API guidelines — call this when the user selects/downloads a photo."""
     headers = {"Authorization": f"Client-ID {access_key}"}
     try:
         http_get_json(download_location, headers)
