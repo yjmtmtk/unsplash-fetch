@@ -94,18 +94,22 @@ python <skill_dir>/scripts/fetch_unsplash.py \
 The script writes JSON to stdout. Tell the user:
 
 - The save path
-- Photographer credit (Unsplash guidelines recommend attribution): `Photo by {photographer} on Unsplash` with the photo_url linked
+- **Attribution** — the Unsplash API guidelines REQUIRE crediting both the photographer and Unsplash, with `?utm_source=unsplash-fetch&utm_medium=referral` appended to both links. The script does this for you in the `attribution` field; surface `attribution.markdown` (or `attribution.html` if the project is HTML) verbatim and tell the user to paste it next to the image
 - Which index was used and cache status (`hit` = reused, `miss` = freshly fetched)
 - Remaining API quota, from the `rate_limit` field: `API: {remaining}/{limit}/h` (Unsplash uses a rolling 1-hour window)
 
 Example:
 > ✓ Saved to `./public/images/hero.webp` (index 1 / 30)
-> Photo by Jane Doe on Unsplash — https://unsplash.com/photos/abc123
+> Attribution (paste this near the image — required by Unsplash):
+> `Photo by [Jane Doe](https://unsplash.com/@janedoe?utm_source=unsplash-fetch&utm_medium=referral) on [Unsplash](https://unsplash.com/?utm_source=unsplash-fetch&utm_medium=referral)`
 > Cache: hit · API: 47/50/h
+
+**Do not strip the UTM parameters** — they are how Unsplash credits photographers and are a hard requirement of the API Terms.
 
 ## Cache management
 
 - Location: `./.unsplash-cache/{keyword-slug}.json` in the current directory
+- **Gitignore reminder**: on the first successful fetch in a git repo where `.unsplash-cache/` is not yet ignored, mention once that it's recommended to add `.unsplash-cache/` to `.gitignore` (the contact-sheet thumbnails are meant for internal AI selection, not for redistribution). Don't repeat this in the same conversation, and don't bring it up outside git repos
 - Caches persist until explicitly cleared (no automatic expiry). If the user wants fresh candidates for a keyword, suggest `--clear` for that keyword
 - Clear a specific keyword:
   ```bash

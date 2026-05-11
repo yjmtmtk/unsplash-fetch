@@ -22,6 +22,8 @@ RATE_LIMIT_FILE = ".rate-limit.json"
 PER_PAGE = 30
 DEFAULT_WIDTH = 1080
 API_BASE = "https://api.unsplash.com"
+UTM_SUFFIX = "utm_source=unsplash-fetch&utm_medium=referral"
+UNSPLASH_HOME = "https://unsplash.com/"
 
 _LATEST_RATE_LIMIT = None
 
@@ -136,6 +138,31 @@ def trigger_download_ping(download_location: str, access_key: str) -> None:
     except Exception:
         # Don't fail the user-facing op on a tracking ping failure
         pass
+
+
+def with_utm(url: str) -> str:
+    """Append the required UTM parameters per Unsplash API guidelines."""
+    if not url:
+        return url
+    sep = "&" if "?" in url else "?"
+    return f"{url}{sep}{UTM_SUFFIX}"
+
+
+def build_attribution(photo: dict) -> dict:
+    """Return ready-to-paste attribution strings per Unsplash API guidelines."""
+    name = photo["photographer"]
+    photographer_link = with_utm(photo["photographer_url"])
+    unsplash_link = with_utm(UNSPLASH_HOME)
+    return {
+        "text": f"Photo by {name} on Unsplash",
+        "markdown": f"Photo by [{name}]({photographer_link}) on [Unsplash]({unsplash_link})",
+        "html": (
+            f'Photo by <a href="{photographer_link}" target="_blank" rel="noopener">{name}</a> '
+            f'on <a href="{unsplash_link}" target="_blank" rel="noopener">Unsplash</a>'
+        ),
+        "photographer_url_utm": photographer_link,
+        "unsplash_url_utm": unsplash_link,
+    }
 
 
 def pick_photo(cache: dict, index: int) -> dict:
@@ -389,6 +416,7 @@ def cmd_fetch(args) -> None:
         "photographer_url": photo["photographer_url"],
         "photo_url": photo["photo_url"],
         "alt": photo["alt"],
+        "attribution": build_attribution(photo),
         "cache_status": cache_status,
         "total_in_cache": len(cache["photos"]),
         "map_image": str(map_file) if map_file.exists() else None,
