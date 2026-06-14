@@ -1,103 +1,147 @@
 # unsplash-fetch
 
-A Claude Code skill that fetches images from the Unsplash API by keyword and saves selected working copies locally with attribution metadata, using a per-keyword cache to minimize API calls.
+Fetch Unsplash photos by keyword from the command line — with per-keyword caching and a
+browser-viewable **contact sheet** for picking the best shot. **Zero dependencies**, runs on
+**Node ≥18** via `npx`. Built to be driven by an AI agent (or a human).
 
-Designed for web/UI work — hero images, backgrounds, thumbnails, mockup photos, placeholder photography. Just ask Claude for an image and it'll handle the rest.
+> This README doubles as the agent-facing usage doc: command-first and easy to parse.
+> Humans can skim the headers.
 
-## Install
+## Run
+
+No install needed:
+
+```bash
+npx unsplash-fetch --keyword "sunset" --output ./public/images --name hero
+```
+
+Or add it as a Claude Code skill (adds natural-language triggering, same engine underneath):
 
 ```bash
 npx skills add yjmtmtk/unsplash-fetch
 ```
 
-This installs the skill into `~/.claude/skills/unsplash-fetch/` (or `./.claude/skills/` for project-local with `--add-dir .`).
+Needs **Node ≥18** (uses built-in `fetch`) and an Unsplash access key. No other dependencies.
 
-## Setup
+## Setup — Unsplash access key
 
-**Each user must register their own Unsplash developer app and use their own key.** Never commit keys to a repository, paste them into chat logs, or share them between people — Unsplash's API Terms require keys to remain confidential, and a leaked key gets revoked.
-
-Get a free key at https://unsplash.com/developers (register a new application), then:
+Get a free key at <https://unsplash.com/developers>, then either:
 
 ```bash
-export UNSPLASH_ACCESS_KEY=your_key_here
+export UNSPLASH_ACCESS_KEY=your_key   # persist in ~/.zshrc or ~/.bashrc
 ```
 
-Add it to your shell profile (`~/.zshrc`, `~/.bashrc`) for permanence.
+…or pass `--access-key <key>` per call. **Keep keys private** — never commit or share them
+(Unsplash revokes leaked keys). The free "demo" tier allows **50 requests/hour**; the
+per-keyword cache keeps you well under it (one keyword = one API call, then up to 30 reuses).
 
-> **Rate limit:** Unsplash's free "demo" tier allows **50 requests/hour**.
->
-> The per-keyword cache in this skill is designed to keep you well under that for normal web-design work — one keyword = one API call, then up to 30 reuses.
->
-> If you need more, you can apply for production access (5000/h) at https://unsplash.com/oauth/applications. Production approval is per-application and not something this skill can grant you.
+## Commands
 
-### Skip Claude Code permission prompts (optional, one-time)
+```bash
+# fetch the top-relevance photo for a keyword
+npx unsplash-fetch --keyword "sunset" --output ./img --name hero
 
-By default Claude Code asks for permission every time it runs the fetch script. To skip, add this to `~/.claude/settings.json`:
+# pick a specific candidate (0–29; 0 = top relevance)
+npx unsplash-fetch --keyword "sunset" --index 7 --output ./img --name hero
 
-```json
+# build the contact sheet only — choose visually, download nothing
+npx unsplash-fetch --keyword "sunset" --map-only
+
+# clear a keyword's cache / everything
+npx unsplash-fetch --keyword "sunset" --clear
+npx unsplash-fetch --clear --all
+```
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--keyword <kw>` | (required) | Search term; short English works best (`sunset`, `cherry blossom`) |
+| `--index <0-29>` | `0` | Which of the 30 cached results to download |
+| `--output <dir>` | `./images` | Output directory |
+| `--name <base>` | `{keyword}-{index}` | Filename without extension |
+| `--width <px>` | `1080` | Image width |
+| `--format jpg\|webp\|png` | `jpg` | Output format |
+| `--map-only` | — | Write the HTML contact sheet, download nothing |
+| `--clear [--all]` | — | Clear cache for `--keyword` (or every cache with `--all`) |
+| `--access-key <key>` | env | Overrides `UNSPLASH_ACCESS_KEY` |
+
+`npx unsplash-fetch --help` prints all of this.
+
+## Output (JSON on stdout)
+
+Every fetch prints one JSON object. Key fields:
+
+```jsonc
 {
-  "permissions": {
-    "allow": ["Bash(python *fetch_unsplash.py *)"]
-  }
+  "saved_to": "/abs/path/hero.jpg",
+  "index": 7,
+  "photo_id": "…",
+  "attribution": {
+    "markdown": "Photo by [Name](…?utm_source=unsplash-fetch&utm_medium=referral) on [Unsplash](…)",
+    "html": "Photo by <a href=…>Name</a> on <a href=…>Unsplash</a>",
+    "text": "Photo by Name on Unsplash"
+  },
+  "contact_sheet": "/abs/.../_unsplash-cache/sunset-map.html",
+  "cache_status": "hit | miss",
+  "rate_limit": { "remaining": 47, "limit": 50 }
 }
 ```
 
-If you don't set this up yourself, Claude will offer to add it for you after the first successful fetch in a conversation.
+- **`attribution` is mandatory.** Unsplash's API Terms require crediting the photographer **and**
+  Unsplash, with the UTM parameters intact. Paste `attribution.markdown` (or `.html` for HTML
+  projects) next to the image. **Do not strip the UTM params.**
+- `--map-only` prints `{ contact_sheet, keyword, total_in_cache, cache_status, rate_limit }`.
+- **No key set →** exits `1` with `ERROR: UNSPLASH_ACCESS_KEY not set` and does **no** network
+  calls or writes. `--clear` and `--help` work without a key.
 
-## Usage
+## Choosing a photo: the contact sheet
 
-Just ask Claude in natural language:
+A fetch (or `--map-only`) writes an **HTML contact sheet** of the 30 candidates — 6 across, each
+cell badged with its index `0`–`29`, using ~400px thumbnails (~900 KB total) — to
+`_unsplash-cache/{keyword}-map.html`.
 
-- "I want a sunset image for the hero, save it to `./public/images/`"
+It's HTML (zero-dependency), so **render it to view it**:
 
-- "Get me a photo of a cat at 1920px in webp"
+- Open the file in a browser directly if your browser allows `file://`.
+- Headless/automation that blocks `file://` → serve it, then open the `http://` URL:
+  ```bash
+  npx -y serve -l 4399 _unsplash-cache        # or: python3 -m http.server 4399 -d _unsplash-cache
+  # → http://localhost:4399/{keyword}-map.html
+  ```
+- **An AI agent:** screenshot that page, read the screenshot, then re-run with the chosen
+  `--index N`. (Use `--map-only` first so you don't waste a download on `index 0`.)
 
-- "Another one" / "different one" — pulls the next index from the cache
+## Cache & files
 
-- "The most dramatic one" — Claude prepares the contact-sheet first (no wasted download), looks at it, and picks the right index for you
+- Per-keyword cache at `./_unsplash-cache/{keyword}.json`, created in the current directory.
+- It's a **visible** directory (not a dotfile) so you don't forget it — **add `_unsplash-cache/`
+  to `.gitignore`**. The cache and contact sheet are internal selection artifacts; don't commit,
+  deploy, or surface them to end users. Cleanup is just `rm -rf _unsplash-cache/`.
+- Caches persist until `--clear` (no auto-expiry). Unsplash adds photos over time, so clear
+  occasionally for fresh candidates.
+- The download-ping required by Unsplash's API guidelines is sent automatically on each fetch.
 
-- "Clear the sunset cache"
+## Scope & the Unsplash API Terms
 
-## How it works
+Intended for **web/UI production** — downloading photos as design assets for a site or product
+you build. That's permitted by the [Unsplash License](https://unsplash.com/license) (copy,
+modify, distribute, commercial use OK).
 
-- First fetch for a keyword pulls 30 results from Unsplash and caches them at `./.unsplash-cache/{keyword}.json`.
-
-- A contact-sheet image (`{keyword}-map.jpg`, 6×5 grid with index badges) is generated alongside, so Claude can visually pick the right one when you specify subjective criteria.
-
-  **This image is for Claude's internal selection only** — do not redistribute it, commit it to public repos, or surface it as a UI to end users. Add `.unsplash-cache/` to your `.gitignore`.
-
-- Subsequent calls reuse the cache (no API hit) and pull a different index.
-
-- Caches persist until you explicitly clear them (`"clear the sunset cache"`) — no automatic expiry.
-
-- A required attribution string (with the UTM parameters mandated by the Unsplash API Terms) is reported with each image.
-
-  **Display it near the photo on your site** — this is a hard requirement of the API, not optional.
-
-## Scope and the Unsplash API Terms
-
-This skill is intended for **web/UI production work**: downloading photos as design assets for a site or product you are building. That use is permitted under the Unsplash License, which allows copying, modifying, distributing, and commercial use of the photos.
-
-For applications that **display Unsplash photos dynamically to end users** (galleries, wallpaper apps, "search Unsplash" features), the API Terms instead require you to **hotlink** the URLs returned under `photo.urls` rather than download and re-host. This skill is not the right tool for that pattern — build a proper integration that hotlinks instead.
-
-Replicating Unsplash's core experience (an unofficial Unsplash client, wallpaper browser, etc.) is explicitly disallowed by the API Terms. Don't do that.
-
-## Cache structure
-
-Each cached keyword stores only 9 fields per image (id, URLs, alt, photographer info, download_location). Per-project caches live at the project root, so cleanup is just `rm -rf .unsplash-cache/`.
+Apps that **display Unsplash photos to end users dynamically** (galleries, "search Unsplash"
+features, wallpaper apps) must instead **hotlink** the URLs under `photo.urls` rather than
+download and re-host — this tool is not for that. Replicating Unsplash's core experience (an
+unofficial client, wallpaper browser, etc.) is disallowed by the API Terms.
 
 ## Requirements
 
-- Python 3 (uses stdlib only — no `pip install` needed)
-
-- Pillow (optional, for the contact-sheet image generation)
-
-- An Unsplash developer access key
+- **Node ≥18** (built-in `fetch`). **Zero npm dependencies.**
+- An Unsplash developer access key.
 
 ## License
 
-MIT for this skill's code. Photos fetched via this skill are governed by the [Unsplash License](https://unsplash.com/license) and the [Unsplash API Terms](https://unsplash.com/api-terms).
+MIT for this tool's code. Photos are governed by the
+[Unsplash License](https://unsplash.com/license) and
+[Unsplash API Terms](https://unsplash.com/api-terms).
 
 ---
 
-This is an unofficial third-party tool. Not affiliated with, endorsed by, or sponsored by Unsplash.
+Unofficial third-party tool. Not affiliated with, endorsed by, or sponsored by Unsplash.

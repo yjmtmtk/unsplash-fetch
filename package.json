@@ -1,0 +1,37 @@
+{
+  "name": "unsplash-fetch",
+  "version": "0.1.0",
+  "description": "Fetch Unsplash images by keyword with per-keyword caching and a browser-viewable HTML contact sheet. Zero dependencies — runs via npx.",
+  "bin": {
+    "unsplash-fetch": "bin/cli.js"
+  },
+  "files": [
+    "bin",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "type": "commonjs",
+  "keywords": [
+    "unsplash",
+    "images",
+    "photos",
+    "cli",
+    "npx",
+    "stock-photos",
+    "ai",
+    "contact-sheet"
+  ],
+  "license": "MIT",
+  "author": "yjmtmtk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yjmtmtk/unsplash-fetch.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yjmtmtk/unsplash-fetch/issues"
+  },
+  "homepage": "https://github.com/yjmtmtk/unsplash-fetch#readme"
+}
